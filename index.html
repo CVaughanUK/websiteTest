@@ -1,0 +1,281 @@
+﻿<!DOCTYPE HTML>
+<head>
+    <title> Distort </title>
+    <meta charset="utf-8">
+    <!--
+    distort - a small visualizer for a fm synth
+    this creates a one oscillator fm synth and visualisation to match
+    the visualisation is created using sin and cos function applied to the a for loop of lines being drawn
+    this is then distorted by a x and y factor, or randomised synced to the clock
+    moving the mouse in the x direction creates creates a higher base tone for the osc
+    moving the mouse in the y direction increases the mod lfo speed
+    if the mouse is moved at speed it changes the frequency of the note triggers
+    -->
+    <!-- This is where we position the interface controls -->
+    <style>
+        #visualSwitch {
+            position: absolute;
+            top: 18px;
+            left: 20px;
+        }
+
+        #visualXSlider {
+            position: absolute;
+            top: 16px;
+            left: 70px;
+        }
+
+        #visualYSlider {
+            position: absolute;
+            top: 16px;
+            left: 180px;
+        }
+
+        #visualSketchSwitch {
+            position: absolute;
+            top: 18px;
+            left: 295px;
+        }
+    </style>
+
+</head>
+<body>
+<!-- These are the ids for the interface controls -->
+<div id="visualSwitch"></div>
+<div id="visualXSlider"></div>
+<div id="visualYSlider"></div>
+<div id="visualSketchSwitch"></div>
+
+<!-- This is the Nexus library -->
+<script src="js/main.js"></script>
+<script src="js/_maxiLib.js"></script>
+<script src="js/NexusUI.js"></script>
+<script src="js/p5.js"></script>
+
+</body>
+<script>
+
+    
+    //Creates a switch for controlling the randomisation of the visuals
+    var visualSwitch = new window.Nexus.Toggle('#visualSwitch', { 'size': [40, 20], 'state': false });
+    visualSwitch.on('change', function (val) {
+        lineFactorRandom = val;
+    });
+    visualSwitch.colorize("fill", "#FFFFFF");
+    visualSwitch.colorize("accent", "#666666");
+
+    //Creates sliders for changing the x and y offset of the visual in manual mode
+    var visualXSlider = new window.Nexus.Slider('#visualXSlider', { 'size': [100, 24], 'min': 100, 'max': 1500 });
+    visualXSlider.on('change', function (val) {
+        lineFactorX = val;
+    });
+    visualXSlider.colorize("fill", "#FFFFFF");
+    visualXSlider.colorize("accent", "#666666");
+
+    var visualYSlider = new window.Nexus.Slider('#visualYSlider', { 'size': [100, 24], 'min': 100, 'max': 1500 });
+    visualYSlider.on('change', function (val) {
+        lineFactorY = val;
+    });
+    visualYSlider.colorize("fill", "#FFFFFF");
+    visualYSlider.colorize("accent", "#666666");
+
+    //Creates a switch for controlling the randomisation of the visuals
+    var visualSketchSwitch = new window.Nexus.Toggle('#visualSketchSwitch', { 'size': [40, 20], 'state': false });
+    visualSketchSwitch.on('change', function (val) {
+        visualSketch = val;
+    });
+    visualSketchSwitch.colorize("fill", "#FFFFFF");
+    visualSketchSwitch.colorize("accent", "#666666");
+    
+    //Maxim Variables
+
+    //Scatty Arp Visuals
+
+    //This is our main audio driver
+    var maxiAudio = new maximJs.maxiAudio();
+    maxiAudio.init();
+
+    //This creates the clock device and variables for it
+    var clock = new maximJs.maxiClock();
+    var clockTempo = 160;
+    var clockTicks = 4;
+    var clockBase = 10;
+
+    //This creates a playhead for the opening
+    var playHead = 0;
+
+    //This is the lfo oscillator used to modulate the main oscillator for the fm effect
+    var lfo = new maximJs.maxiOsc();
+    var lfoFreq = 0.5;
+    var lfoVal = 0;
+
+    //This is our base oscillator that is modulated
+    var osc1 = new maximJs.maxiOsc();
+    var oscFreq = 500;
+    var oscFreqMin = 100;
+    var oscFreqMax = 5000;
+
+    //This is the envelope for the oscillator
+    var env = new maximJs.maxiEnv();
+    env.setAttack(20);
+    env.setDecay(1);
+    env.setSustain(1);
+    env.setRelease(200);
+
+
+    //Doorbell Arp Visuals
+
+    //Creates the oscillators
+    var v2osc1 = new maximJs.maxiOsc();
+    var v2osc2 = new maximJs.maxiOsc();
+    var v2osc3 = new maximJs.maxiOsc();
+    var linesLfo1 = new maximJs.maxiOsc();
+
+    //Creates an LFO
+    var v2lfo = new maximJs.maxiOsc();
+
+    //LFO Output Variable
+    var v2lfoVal;
+
+    //Oscillator Variables
+    var v2freq = 400;
+    var v2freqMod = 0;
+
+    //Output variables
+    var v2subOut;
+    var v2subOut2;
+    var v2out = 0;
+
+    //Other Variables
+    var v2Chance = 3;
+    var v2playHead = 0;
+
+    //Envelope Variable
+    var v2env = new maximJs.maxiEnv();
+    v2env.setAttack(20);
+    v2env.setDecay(1);
+    v2env.setSustain(1);
+    v2env.setRelease(200);
+
+    //Main output variable
+    var out = 0;
+
+    //Main audio function
+    maxiAudio.play = function () {
+        //This switches the clock on and updates its tempo and ticks
+        clock.ticker();
+        clock.setTicksPerBeat(clockTicks);
+        clock.setTempo(clockTempo);
+
+        //Increases the playhead everytime the clock ticks over
+        if (clock.tick) {
+            playHead++;
+        }
+
+        //If the first visual is active
+        if (scattyArp) {
+            clockTempo = 160;
+
+            //This creates the lfo and scales it between 0 and 1
+            lfoVal = (lfo.sinewave(lfoFreq) + 2) / 2;
+
+            //This modulates the clock ticks amount by the lfo
+            clockTicks = clockBase * lfoVal;
+
+            //If the mouse moves fast it changes the base clock rate to be modulated
+            if (mouseTrig) {
+                clockBase = getRandom(1, 20);
+            }
+
+            //Every time the clock ticks
+            if (clock.tick) {
+                //Sets a random X and Y position
+                xRandom = getRandom(1, width);
+                yRandom = getRandom(1, height);
+
+                //Creates a random offset variable
+                lineFactorOffsetX = getRandom(-15, 15);
+                lineFactorOffsetY = getRandom(-15, 15);
+
+                //Triggers the envelope
+                env.trigger = 1;
+
+                if (playHead % 5 === 0) {
+                    //Randomises the osc freq after a certain amount of ticks
+                    oscFreq = getRandom(oscFreqMin, oscFreqMax);
+                }
+            } else {
+                //Siwtches off the envelope trigger when the clock isnt ticking    
+                env.trigger = 0;
+            }
+
+            //Outputs the oscillator to the soundcard with the freq modulated by the lfo and the envelope applied twice over
+            out = osc1.sawn((oscFreq * lfoVal) * env.adsr(1, env.trigger)) * env.adsr(1, env.trigger);
+        }
+
+        //If the second visual is active
+        if (doorbellArp) {
+            
+
+            //If the random switch is on
+            if (lineFactorRandom) {
+                clockTempo = 160; //The tempo is fixed
+            } else {
+                clockTempo = 160 * (mouseY / height);  //Otherwise it can be manipulated with the mouse position
+            }
+
+            //If the clock ticks
+            if (clock.tick) {
+                v2env.trigger = 1; //Trigger the envelope
+                v2playHead++; //Moves the play head forward
+
+                if (mouseTrig) { //If the mouse moves fast enough to trigger
+                    v2freq = getRandom(200, 2000); //Sets a new random frequency for the oscillator
+                    v2env.setRelease(2000); //Lengthens the release time
+                    clockTicks = 1; //Slows the amount of ticks
+                    v2Chance = int(getRandom(1, 5)); //Creates a new chance variable randomly
+                    pause = 0; //Sets the pause variable to 0 (on)
+                } else {
+                    v2freq = getRandom(350, 450);  //Frequency is picked from a much more narrow range
+                    v2env.setRelease(200);  //Release time is shorter
+                    clockTicks = 8; //Clock ticks are much higher
+
+                    //This triggers a new focus point of the lines to picked randomly on every tick that isnt a long trigger
+                    linesPointCenterXRandom = getRandom(1, width / 2);
+                    linesPointCenterYRandom = getRandom(1, height / 2);
+                    pause = 1; //Pause is switched off
+                }
+
+            } else {
+                v2env.trigger = 0; //Envelope is not triggered
+            }
+
+            v2lfoVal = ((v2lfo.sinewave(lineFactorX / 500) + 1) / 2) * lineFactorY / 100; //This creates an LFO
+
+            v2subOut = v2osc1.pulse(v2freq, 0.24); //Our first oscillator
+            v2subOut2 = v2subOut * v2osc2.sinewave(10 + v2lfoVal); //Oscillator 1 level modulated by another oscillator whose frequency is modulating
+            
+            //The output takes the sub output 2 and reduces it by the opposing phase and then takes off the sinewave lfo and an adsr is applied to it
+            out = ((v2subOut2 - ((v2subOut * v2osc2.sinewave(10 + v2lfoVal)) * -1) - v2osc2.sinewave(10 + v2lfoVal)) * v2env.adsr(0.5, v2env.trigger));
+
+            //An lfo varibale for the lines is created
+            linesLfo1Val = ((linesLfo1.sinewave(lineFactorX / 500) * 2) - 1) * lineFactorY / 100;
+
+        }
+
+
+        //Output Device      
+        this.output = out;
+
+
+    };
+
+    //Small randomisation function
+    function getRandom(min, max) {
+        return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
+
+
+
+</script>
